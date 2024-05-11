@@ -18,9 +18,9 @@ class MyApp extends StatelessWidget {
       title: 'Flutter Demo',
       initialRoute: '/login', // Navigate to sign-up screen initially
       routes: {
-        '/signup': (context) => SignUpScreen(),
         '/login': (context) => LoginScreen(),
-         '/task_management': (context) => TaskManagementScreen(),
+        '/signup': (context) => SignUpScreen(),
+        '/task_management': (context) => TaskManagementScreen(),
       },
     );
   }

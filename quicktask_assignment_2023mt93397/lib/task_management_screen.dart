@@ -1,20 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
-
-class Task {
-  final String title;
-  final DateTime dueDate;
-   bool status;
-  final String description;
-
-  Task({
-    required this.title,
-    required this.dueDate,
-    required this.status,
-    required this.description,
-  });
-}
+import 'package:quicktask_assignment_2023mt93397/add_task_screen.dart';
+import 'package:quicktask_assignment_2023mt93397/task_model.dart';
+import 'package:quicktask_assignment_2023mt93397/task_service.dart';
 
 class TaskManagementScreen extends StatefulWidget {
   @override
@@ -22,47 +9,110 @@ class TaskManagementScreen extends StatefulWidget {
 }
 
 class _TaskManagementScreenState extends State<TaskManagementScreen> {
-  List<Task> tasks = [];
-static const String parseServerUrl = 'https://parseapi.back4app.com';
-  static const String applicationId = '5vXrHKZdEuWgjUXybjx96svTDGDXf1839QpZtKt0';
-  static const String restApiKey = 'c4vdvwqXh34VeCHLq0M1W2un004Zf1ZXoqTkZWWs';
-  static const String clientKey = 'Y68L9vISTrsYsMmCmDCZ2DDcXUWfJicxkK4IZVLW';
+  late List<Task> _tasks = [];
+  bool _isLoading = false;
+
   @override
   void initState() {
     super.initState();
-    // Fetch tasks when the screen loads
-    fetchTasks();
+    _loadTasks();
   }
 
-  Future<void> fetchTasks() async {
-    final response = await http.get(
-      Uri.parse('$parseServerUrl/tasks'),
-      headers: {
-        'X-Parse-Application-Id': applicationId,
-        'X-Parse-REST-API-Key': restApiKey,
-        'X-Parse-Client-Key': clientKey,
-      },
-    );
+  Future<void> _loadTasks() async {
+    setState(() {
+      _isLoading = true;
+    });
 
-    if (response.statusCode == 200) {
-      // Parse response data and populate tasks list
-      final List<dynamic> responseData = jsonDecode(response.body);
-      final List<Task> fetchedTasks = responseData.map((taskData) {
-        return Task(
-          title: taskData['title'],
-          dueDate: DateTime.parse(taskData['dueDate']),
-          status: taskData['status'],
-          description: taskData['description'],
-        );
-      }).toList();
-
+    try {
+      final tasks = await TaskService.getTasks();
       setState(() {
-        tasks = fetchedTasks;
+        _tasks = tasks;
       });
-    } else {
-      // Handle error if request fails
-      print('Failed to fetch tasks: ${response.statusCode}');
+    } catch (e) {
+      print('Error loading tasks: $e');
+      // Show error message to the user
+      _showSnackBar('Failed to load tasks. Please try again later.');
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
     }
+  }
+
+  void _addTask(Task newTask) async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final createdTask = await TaskService.createTask(newTask);
+      setState(() {
+        _tasks.add(createdTask);
+        _isLoading = false; // Set isLoading to false after adding task
+      });
+      _showSnackBar('Task added successfully');
+      
+      // Reload tasks after adding a new task
+      _loadTasks();
+    } catch (e) {
+      print('Error adding task: $e');
+      // Show error message to the user
+      _showSnackBar('Failed to add task. Please try again later.');
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  void _deleteTask(Task task) async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      await TaskService.deleteTask(task.objectId!);
+      setState(() {
+        _tasks.remove(task);
+      });
+    } catch (e) {
+      print('Error deleting task: $e');
+      // Show error message to the user
+      _showSnackBar('Failed to delete task. Please try again later.');
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  void _toggleTaskStatus(Task task) async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final updatedTask = task.copyWith(completed: !task.completed);
+      await TaskService.updateTask(updatedTask);
+      setState(() {
+        _tasks[_tasks.indexWhere((t) => t.objectId == task.objectId)] = updatedTask;
+      });
+    } catch (e) {
+      print('Error updating task status: $e');
+      // Show error message to the user
+      _showSnackBar('Failed to update task status. Please try again later.');
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  void _showSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+      ),
+    );
   }
 
   @override
@@ -71,34 +121,54 @@ static const String parseServerUrl = 'https://parseapi.back4app.com';
       appBar: AppBar(
         title: Text('Task Management'),
       ),
-      body: ListView.builder(
-        itemCount: tasks.length,
-        itemBuilder: (BuildContext context, int index) {
-          final task = tasks[index];
-          return ListTile(
-            title: Text(task.title),
-            subtitle: Text('Due Date: ${task.dueDate}'),
-            trailing: Checkbox(
-              value: task.status,
-              onChanged: (bool? value) {
-                // Update task status when checkbox is toggled
-                setState(() {
-                  task.status = value ?? false;
-                });
-                // Call API to update task status
-                // Implement this functionality
-              },
-            ),
-            onTap: () {
-              // Display task details or implement deletion functionality
-            },
-          );
-        },
-      ),
+      body: _isLoading
+          ? Center(child: CircularProgressIndicator())
+          : _tasks.isEmpty
+              ? Center(child: Text('No tasks available.'))
+              : SingleChildScrollView(
+                  child: DataTable(
+                    columns: [
+                      DataColumn(label: Text('Title')),
+                      DataColumn(label: Text('Due Date')),
+                      DataColumn(label: Text('Status')),
+                      DataColumn(label: Text('Action')),
+                    ],
+                    rows: _tasks
+                        .map((task) => DataRow(cells: [
+                              DataCell(Text(task.title)),
+                              DataCell(Text(task.dueDate?.toIso8601String() ?? 'N/A')),
+                              DataCell(
+                                Row(
+                                  children: [
+                                    Text(task.completed ? 'Complete' : 'Incomplete'),
+                                    IconButton(
+                                      icon: Icon(Icons.toggle_on),
+                                      onPressed: () => _toggleTaskStatus(task),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              DataCell(IconButton(
+                                icon: Icon(Icons.delete),
+                                onPressed: () => _deleteTask(task),
+                              )),
+                            ]))
+                        .toList(),
+                  ),
+                ),
       floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          // Navigate to add task screen
-          // Implement navigation to add task screen
+        onPressed: () async {
+          final newTask = await Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => AddTaskScreen(
+                addTask: _addTask, // Pass the _addTask function
+              ),
+            ),
+          );
+          if (newTask != null) {
+            _loadTasks(); // Reload tasks after adding a new task
+          }
         },
         child: Icon(Icons.add),
       ),
